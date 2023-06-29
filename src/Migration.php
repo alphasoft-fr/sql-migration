@@ -46,12 +46,12 @@ final class Migration
 
         $this->pdo = $params['connection'];
         $defaultParams = [
-            'table_name' => 'migration_versions',
-            'create_version_sql' => static function (string $tableName) {
-                return 'CREATE TABLE IF NOT EXISTS ' . $tableName. ' (version varchar(255) NOT NULL)';
+            'table_name' => 'mig_versions',
+            'create_version_sql' => static function (string $table) {
+                return 'CREATE TABLE IF NOT EXISTS ' . $table. ' (version VARCHAR(255) NOT NULL)';
             },
         ];
-        $this->params = $defaultParams + $params;
+        $this->params = $params + $defaultParams;
     }
 
     public function generateMigration(): string
@@ -88,7 +88,7 @@ final class Migration
 
     public function createVersion(): void
     {
-        $this->pdo->query($this->params['create_version_sql']($this->params['table_name']));
+       $this->pdo->query($this->params['create_version_sql']($this->params['table_name']));
     }
 
     private function getMigrations(): array
