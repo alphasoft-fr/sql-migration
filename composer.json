@@ -1,0 +1,36 @@
+{
+  "name": "alphasoft-fr/sql-migration",
+  "description": "PHP SQL Migration",
+  "type": "library",
+  "license": "MIT",
+  "bin": ["bin/sqlmigration"],
+  "authors": [
+    {
+      "name": "F. Michel"
+    },
+    {
+      "name": "Alpha Soft",
+      "homepage": "https://www.alpha-soft.fr"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "AlphaSoft\\Sql\\Migration\\": "src",
+      "Test\\AlphaSoft\\Sql\\Migration\\": "tests"
+    }
+  },
+  "require": {
+    "php": ">=7.4",
+    "ext-pdo": "*",
+    "symfony/console": "^5.4"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.4",
+    "nunomaduro/phpinsights": "^1.14"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": false
+    }
+  }
+}
