@@ -2,24 +2,50 @@
 
 namespace AlphaSoft\Sql\Migration;
 
+use AlphaSoft\Sql\Migration\Helper\MigrationParams;
+use InvalidArgumentException;
+use PDO;
+use PDOException;
+use RuntimeException;
+use function date;
+use function file_exists;
+use function file_get_contents;
+use function file_put_contents;
+use function getcwd;
+use function is_array;
+
 final class Migration
 {
-    private const  CONFIG_FILENAME = 'sql-migration.php';
-    private ?\PDO $pdo;
+    private const CONFIG_FILENAME = 'migration-config.php';
+
+    /** @var PDO The PDO connection instance. */
+    private PDO $pdo;
+
+    /** @var array Configuration parameters. */
     private array $params;
 
-    /***
-     * @var array<string>
-     */
+    /** @var array<string> List of successfully migrated versions. */
     private array $successList = [];
+    /**
+     * @var MigrationDirectory
+     */
+    private MigrationDirectory $directory;
 
     public static function create(): self
     {
         $filename = getcwd() . DIRECTORY_SEPARATOR . self::CONFIG_FILENAME;
+
         if (!file_exists($filename)) {
-            throw new \InvalidArgumentException($filename . ' is missing');
+            throw new InvalidArgumentException("Configuration file '$filename' is missing");
         }
-        return new self(require $filename);
+
+        $config = require $filename;
+
+        if (!is_array($config)) {
+            throw new InvalidArgumentException("Invalid configuration in '$filename'");
+        }
+
+        return new self($config);
     }
 
     /**
@@ -28,81 +54,110 @@ final class Migration
      */
     public function __construct(array $params = [])
     {
-        if (!array_key_exists('connection', $params)) {
-            throw new \InvalidArgumentException('"connection" is missing');
-        }
-
-        if (!$params['connection'] instanceof \PDO) {
-            throw new \InvalidArgumentException('"connection" value must be an instance of PDO');
-        }
-
-        if (!array_key_exists('migrations_directory', $params)) {
-            throw new \InvalidArgumentException('"migrations_directory" is missing');
-        }
-
-        if (array_key_exists('create_version_sql', $params)  && !$params['create_version_sql'] instanceof \Closure) {
-            throw new \InvalidArgumentException('"create_version_sql" value must be an instance of Closure');
-        }
+        $params = MigrationParams::validate($params);
 
         $this->pdo = $params['connection'];
-        $defaultParams = [
-            'table_name' => 'mig_versions',
-            'create_version_sql' => static function (string $table) {
-                return 'CREATE TABLE IF NOT EXISTS ' . $table. ' (version VARCHAR(255) NOT NULL)';
-            },
-        ];
-        $this->params = $params + $defaultParams;
+        $this->directory = new MigrationDirectory($params['migrations_directory']);
+        $this->params = $params;
     }
 
     public function generateMigration(): string
     {
         $file = date('YmdHis') . '.sql';
-        $filename = $this->params['migrations_directory'] . DIRECTORY_SEPARATOR . $file;
-        file_put_contents($filename, '');
+        $filename = $this->directory->getDir() . DIRECTORY_SEPARATOR . $file;
+
+        $migrationContent = <<<'SQL'
+-- UP MIGRATION --
+-- Write the SQL code corresponding to the up migration here
+-- You can add the necessary SQL statements for updating the database
+
+-- DOWN MIGRATION --
+-- Write the SQL code corresponding to the down migration here
+-- You can add the necessary SQL statements for reverting the up migration
+SQL;
+
+        file_put_contents($filename, $migrationContent);
         return $filename;
     }
 
     public function migrate(): void
     {
+        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->createVersion();
-        $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 
         $stmt = $this->pdo->prepare('SELECT version FROM ' . $this->params['table_name']);
         $stmt->execute();
-        $versions = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        $versions = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-        foreach ($this->getMigrations() as $version => $migration) {
+        foreach ($this->directory->getMigrations() as $version => $migration) {
 
             if (in_array($version, $versions)) {
                 continue;
             }
 
-            $this->pdo->query(file_get_contents($migration));
-            $this->pdo->prepare('INSERT INTO ' . $this->params['table_name'] . ' (`version`) VALUES (:version)')
-                ->execute(['version' => $version]);
-
+            $this->up($version);
             $this->successList[] = $version;
         }
-
     }
 
-    public function createVersion(): void
+    public function up(string $version): void
     {
-       $this->pdo->query($this->params['create_version_sql']($this->params['table_name']));
-    }
+        $migration = $this->directory->getMigration($version);
+        try {
 
-    private function getMigrations(): array
-    {
-        $migrations = [];
-        foreach (new \DirectoryIterator($this->params['migrations_directory']) as $file) {
-            if ($file->getExtension() !== 'sql') {
-                continue;
-            }
-            $version = pathinfo($file->getBasename(), PATHINFO_FILENAME);
-            $migrations[$version] = $file->getPathname();
+            $this->pdo->beginTransaction();
+            $this->pdo->exec(self::contentUp($migration));
+
+            $stmt = $this->pdo->prepare('INSERT INTO ' . $this->params['table_name'] . ' (`version`) VALUES (:version)');
+            $stmt->execute(['version' => $version]);
+
+            $this->pdo->commit();
+        } catch (PDOException $e) {
+            $this->pdo->rollBack();
+            throw new RuntimeException("Failed to migrate version $version : " . $e->getMessage());
         }
-        ksort($migrations);
-        return $migrations;
+    }
+
+    public function down(string $version): void
+    {
+        $migration = $this->directory->getMigration($version);
+        try {
+
+            $this->pdo->beginTransaction();
+            $this->pdo->exec(self::contentDown($migration));
+
+            $stmt = $this->pdo->prepare('DELETE FROM ' . $this->params['table_name'] . ' WHERE version = :version');
+            $stmt->execute(['version' => $version]);
+
+            $this->pdo->commit();
+
+        } catch (PDOException $e) {
+            $this->pdo->rollBack();
+            throw new RuntimeException("Failed to execute DOWN migration: " . $e->getMessage());
+        }
+    }
+
+    private function createVersion(): void
+    {
+        $this->pdo->exec($this->params['create_version_sql']($this->params['table_name']));
+    }
+
+    private static function contentUp(string $migration): string
+    {
+        return trim(str_replace('-- UP MIGRATION --', '', self::content($migration)[0]));
+    }
+
+    private static function contentDown(string $migration): string
+    {
+        $downContent = self::content($migration)[1];
+        return trim($downContent);
+    }
+
+    private static function content(string $migration): array
+    {
+        $migrationContent = file_get_contents($migration);
+        $parts = explode('-- DOWN MIGRATION --', $migrationContent, 2);
+        return [trim($parts[0]), (isset($parts[1]) ? trim($parts[1]) : '')];
     }
 
     public function getSuccessList(): array

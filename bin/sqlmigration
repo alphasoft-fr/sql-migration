@@ -1,15 +1,17 @@
 #!/usr/bin/php
 <?php
 
+use AlphaSoft\Sql\Migration\Command\SqlMigrationDownCommand;
 use AlphaSoft\Sql\Migration\Command\SqlMigrationGenerateCommand;
 use AlphaSoft\Sql\Migration\Command\SqlMigrationMigrateCommand;
+use Symfony\Component\Console\Application;
 
 set_time_limit(0);
 
 if (isset($GLOBALS['_composer_autoload_path'])) {
     define('MIGRATION_COMPOSER_INSTALL', $GLOBALS['_composer_autoload_path']);
 } else {
-    foreach (array(__DIR__ . '/../../autoload.php', __DIR__ . '/../vendor/autoload.php', __DIR__ . '/vendor/autoload.php') as $file) {
+    foreach ([__DIR__ . '/../../autoload.php', __DIR__ . '/../vendor/autoload.php', __DIR__ . '/vendor/autoload.php'] as $file) {
         if (file_exists($file)) {
             define('MIGRATION_COMPOSER_INSTALL', $file);
 
@@ -30,27 +32,8 @@ if (!defined('MIGRATION_COMPOSER_INSTALL')) {
 
 require MIGRATION_COMPOSER_INSTALL;
 
-$application = new \Symfony\Component\Console\Application();
+$application = new Application();
 $application->add(new SqlMigrationGenerateCommand());
 $application->add(new SqlMigrationMigrateCommand());
+$application->add(new SqlMigrationDownCommand());
 $application->run();
-
-//$params = require dirname(__DIR__) . '/../../../paper-db.php';
-//$migration = new \DevCoder\DB\Migrations\MigrateService($params);
-//
-//try  {
-//    switch ($argv[1]) {
-//        case 'generate':
-//            $migration->generateMigration();
-//            echo 'Migration generate' . PHP_EOL;
-//            break;
-//        case 'migrate':
-//            $migration->migrate();
-//            foreach ($migration->getSuccessList() as $version) {
-//                echo 'Migrating '.$version.PHP_EOL;
-//            }
-//            break;
-//    }
-//}catch (\Exception $e) {
-//    echo $e->getMessage().PHP_EOL;
-//}
