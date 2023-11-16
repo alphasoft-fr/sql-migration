@@ -165,7 +165,7 @@ class MigrationTest extends TestCase
         $this->assertEquals('20230811000006', $successList[0]); // Assuming the generated migration has this version
 
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(\ValueError::class);
         // Run the down migration
         $migration->down('20230811000006');
 

@@ -12,7 +12,7 @@ composer require alphasoft-fr/sql-migration
 
 ## Requirements
 
-* PHP version 7.4
+* PHP version 8.1
 
 ## Usage
 
