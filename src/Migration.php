@@ -106,7 +106,9 @@ SQL;
         try {
 
             $this->pdo->beginTransaction();
-            $this->pdo->exec(self::contentUp($migration));
+            foreach (explode(';'.PHP_EOL, self::contentUp($migration)) as $query) {
+                $this->pdo->exec($query . ';');
+            }
 
             $stmt = $this->pdo->prepare('INSERT INTO ' . $this->params['table_name'] . ' (`version`) VALUES (:version)');
             $stmt->execute(['version' => $version]);
@@ -124,7 +126,9 @@ SQL;
         try {
 
             $this->pdo->beginTransaction();
-            $this->pdo->exec(self::contentDown($migration));
+            foreach (explode(';'.PHP_EOL, self::contentDown($migration)) as $query) {
+                $this->pdo->exec($query . ';');
+            }
 
             $stmt = $this->pdo->prepare('DELETE FROM ' . $this->params['table_name'] . ' WHERE version = :version');
             $stmt->execute(['version' => $version]);
